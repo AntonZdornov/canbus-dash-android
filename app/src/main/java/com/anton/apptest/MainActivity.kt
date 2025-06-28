@@ -1,0 +1,163 @@
+package com.anton.apptest
+
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
+import com.anton.apptest.ui.theme.ApptestTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.BufferedWriter
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.io.PrintWriter
+import java.net.Socket
+import kotlin.math.roundToInt
+
+class MainActivity : ComponentActivity() {
+    private var job: Job? = null
+
+    // Compose-переменная для текста
+    private val socText = mutableStateOf("SOC: ?%")
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            ApptestTheme {
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    Greeting(
+                        name = socText.value,
+                        modifier = Modifier.padding(innerPadding)
+                    )
+                }
+            }
+        }
+
+        job = CoroutineScope(Dispatchers.IO).launch {
+            getSocFromObd()
+        }
+    }
+
+    private suspend fun getSocFromObd() {
+        try {
+            val socket = Socket("192.168.0.10", 35000)
+            val writer = PrintWriter(BufferedWriter(OutputStreamWriter(socket.getOutputStream())), true)
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+            fun send(cmd: String) {
+                writer.print("$cmd\r")
+                writer.flush()
+                Thread.sleep(200)
+            }
+
+            fun readResponse(): List<String> {
+                val lines = mutableListOf<String>()
+                for (i in 1..10) {
+                    val line = reader.readLine()?.trim() ?: break
+                    if (line.isNotEmpty()) {
+                        lines.add(line)
+                    }
+                    if (line.contains(">", ignoreCase = true)) break
+                }
+                return lines
+            }
+
+            // Инициализация адаптера ELM327
+            send("ATZ"); Thread.sleep(1000)
+            send("ATE0"); send("ATL0"); send("ATH0")
+            send("ATSP6"); Thread.sleep(500)
+
+            // Настройки калибровки по двум точкам
+            val rawMin = 0    // сырое при ≈0 %
+            val rawMax = 255   // сырое при ≈100 %
+            var socCalibrated = 0
+            var rpm = 0
+
+            while (true) {
+                // === SOC ===
+                send("01 5B")
+                val socHexLine = readResponse()
+                    .map { it.trimStart('>', ' ') }
+                    .find { it.startsWith("41 5B") }
+                val rawSoc = socHexLine
+                    ?.split(" ")
+                    ?.getOrNull(2)
+                    ?.toIntOrNull(16) ?: -1
+
+                socCalibrated = if (rawSoc >= rawMin) {
+                    (((rawSoc - rawMin).toDouble() / (rawMax - rawMin)) * 100)
+                        .coerceIn(0.0, 100.0)
+                        .roundToInt()
+                } else 0
+
+//                // === Диагностика PID-ответов ===
+//                listOf("01 5B", "01 B5").forEach { pid ->
+//                    send(pid)
+//                    val lines = readResponse()
+//                    Log.d("antonLog", "$pid -> $lines")
+//                }
+
+                // === RPM ===
+                send("01 0C")
+                val rpmHex = readResponse()
+                    .map { it.trimStart('>', ' ') }
+                    .find { it.startsWith("41 0C") }
+                val localRpm = rpmHex?.split(" ")?.let { parts ->
+                    val A = parts.getOrNull(2)?.toIntOrNull(16) ?: return@let null
+                    val B = parts.getOrNull(3)?.toIntOrNull(16) ?: return@let null
+                    ((A * 256) + B) / 4
+                }
+                if (localRpm != null && localRpm >= 0) rpm = localRpm
+
+                // === Обновить UI ===
+                withContext(Dispatchers.Main) {
+                    socText.value = "SOC: $socCalibrated%, RPM: $rpm"
+                }
+
+                delay(1000)
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                socText.value = "Ошибка: ${e.message}"
+                Log.e("antonLog", "Ошибка OBD", e)
+            }
+        }
+    }
+
+
+    override fun onDestroy() {
+        super.onDestroy()
+        job?.cancel()
+    }
+}
+
+@Composable
+fun Greeting(name: String, modifier: Modifier = Modifier) {
+    Text(
+        text = "battery level: $name",
+        modifier = modifier
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun GreetingPreview() {
+    ApptestTheme {
+        Greeting("Android")
+    }
+}
