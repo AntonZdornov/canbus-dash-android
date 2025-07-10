@@ -1,4 +1,4 @@
-package com.anton.apptest
+package com.anton.candash
 
 import org.junit.Test
 

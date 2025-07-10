@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "apptest"
+rootProject.name = "candash"
 include(":app")
  

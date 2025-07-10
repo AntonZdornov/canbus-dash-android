@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.anton.apptest"
+    namespace = "com.anton.candash"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.anton.apptest"
+        applicationId = "com.anton.candash"
         minSdk = 28
         targetSdk = 35
         versionCode = 1

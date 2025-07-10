@@ -1,4 +1,4 @@
-package com.anton.apptest
+package com.anton.candash
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
