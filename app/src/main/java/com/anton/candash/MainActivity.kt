@@ -5,19 +5,20 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.graphics.PixelFormat
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import android.util.Rational
-import android.view.LayoutInflater
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
+import androidx.compose.runtime.mutableStateOf
 import com.anton.candash.services.BleService
+import com.anton.candash.ui.components.PipScreen
 import com.anton.candash.ui.screens.MainScreen
 import com.anton.candash.ui.theme.ApptestTheme
 import com.anton.candash.viewmodels.MainViewModel
@@ -28,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private var serviceBound = false
 
     private val viewModel: MainViewModel by viewModels()
+    private val isInPipModeState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,22 +39,20 @@ class MainActivity : ComponentActivity() {
             bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         }
 
-//        val params = WindowManager.LayoutParams(
-//            WindowManager.LayoutParams.WRAP_CONTENT,
-//            WindowManager.LayoutParams.WRAP_CONTENT,
-//            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-//            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-//            PixelFormat.TRANSLUCENT
-//        )
-//        val view = LayoutInflater.from(this).inflate(R.layout.fragment_player, null)
-//        windowManager.addView(view, params)
-
         setContent {
             ApptestTheme {
-                MainScreen(
-                    bleValue = viewModel.bleValue,
-                    onStartScan = { viewModel.startScan() }
-                )
+                if (isInPipModeState.value) {
+                    // UI для PIP
+                    PipScreen(
+                        bleValue = viewModel.bleValue,
+                    )
+                } else {
+                    // Твой обычный экран
+                    MainScreen(
+                        bleValue = viewModel.bleValue,
+                        onStartScan = { viewModel.startScan() }
+                    )
+                }
             }
         }
     }
@@ -87,5 +87,24 @@ class MainActivity : ComponentActivity() {
             .setAspectRatio(Rational(16, 9))
             .build()
         enterPictureInPictureMode(params)
+
+        isInPipModeState.value = isInPictureInPictureMode
     }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipModeState.value = isInPictureInPictureMode
+    }
+
+    override fun setPictureInPictureParams(params: PictureInPictureParams) {
+        super.setPictureInPictureParams(params)
+        val aspectRatio = Rational(1, 1)
+        val pipBuilder = PictureInPictureParams.Builder()
+            .setAspectRatio(aspectRatio)
+        enterPictureInPictureMode(pipBuilder.build())
+    }
+
 }
